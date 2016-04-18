@@ -2,6 +2,7 @@ import logging
 from django.core.management.base import BaseCommand
 from mailer.models import MessageLog
 
+logger = logging.getLogger(__name__)
 
 class Command(BaseCommand):
     help = "Delete mailer log"
@@ -13,4 +14,4 @@ class Command(BaseCommand):
         # Compatiblity with Django-1.6
         days = int(options.get('days', args)[0])
         count = MessageLog.objects.purge_old_entries(days)
-        logging.info("%s log entries deleted " % count)
+        logger.info("%s log entries deleted " % count)

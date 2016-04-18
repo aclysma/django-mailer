@@ -6,6 +6,7 @@ from django.db import connection
 
 from mailer.models import Message
 
+logger = logging.getLogger(__name__)
 
 class Command(NoArgsCommand):
     help = "Attempt to resend any deferred mail."
@@ -19,6 +20,7 @@ class Command(NoArgsCommand):
             logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         else:
             logging.basicConfig(level=logging.ERROR, format="%(message)s")
+        logger.info("----- retry_deferred command starting -----")
         count = Message.objects.retry_deferred()  # @@@ new_priority not yet supported
-        logging.info("%s message(s) retried" % count)
+        logger.info("%s message(s) retried" % count)
         connection.close()

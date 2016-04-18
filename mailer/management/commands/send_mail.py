@@ -7,6 +7,7 @@ from django.db import connection
 
 from mailer.engine import send_all
 
+logger = logging.getLogger(__name__)
 
 # allow a sysadmin to pause the sending of mail temporarily.
 PAUSE_SEND = getattr(settings, "MAILER_PAUSE_SEND", False)
@@ -24,10 +25,10 @@ class Command(NoArgsCommand):
             logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         else:
             logging.basicConfig(level=logging.ERROR, format="%(message)s")
-        logging.info("-" * 72)
+        logger.info("----- send_mail command starting -----")
         # if PAUSE_SEND is turned on don't do anything.
         if not PAUSE_SEND:
             send_all()
         else:
-            logging.info("sending is paused, quitting.")
+            logger.info("sending is paused, quitting.")
         connection.close()

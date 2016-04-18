@@ -14,6 +14,7 @@ from django.core.mail import EmailMessage
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
 
+logger = logging.getLogger(__name__)
 
 PRIORITY_HIGH = "1"
 PRIORITY_MEDIUM = "2"
@@ -161,7 +162,7 @@ def filter_recipient_list(lst):
     retval = []
     for e in lst:
         if DontSendEntry.objects.has_address(e):
-            logging.info("skipping email to %s as on don't send list " % e.encode("utf-8"))
+            logger.info("skipping email to %s as on don't send list " % e.encode("utf-8"))
         else:
             retval.append(e)
     return retval

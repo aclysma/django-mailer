@@ -10,6 +10,7 @@ from django.core.mail import get_connection
 
 from mailer.models import Message, MessageLog, RESULT_SUCCESS, RESULT_FAILURE
 
+logger = logging.getLogger(__name__)
 
 # when queue is empty, how long to wait (in seconds) before checking again
 EMPTY_QUEUE_SLEEP = getattr(settings, "MAILER_EMPTY_QUEUE_SLEEP", 30)
@@ -17,6 +18,8 @@ EMPTY_QUEUE_SLEEP = getattr(settings, "MAILER_EMPTY_QUEUE_SLEEP", 30)
 # lock timeout value. how long to wait for the lock to become available.
 # default behavior is to never wait for the lock to be available.
 LOCK_WAIT_TIMEOUT = getattr(settings, "MAILER_LOCK_WAIT_TIMEOUT", -1)
+
+LOCK_FILE_PATH = getattr(settings, "MAILER_LOCK_FILE_PATH", "send_mail")
 
 
 def prioritize():
@@ -46,7 +49,7 @@ def _limits_reached(sent, deferred):
     EMAIL_MAX_BATCH = getattr(settings, "MAILER_EMAIL_MAX_BATCH", None)
 
     if EMAIL_MAX_BATCH is not None and sent >= EMAIL_MAX_BATCH:
-        logging.info("EMAIL_MAX_BATCH (%s) reached, "
+        logger.info("EMAIL_MAX_BATCH (%s) reached, "
                      "stopping for this round", EMAIL_MAX_BATCH)
         return True
 
@@ -55,7 +58,7 @@ def _limits_reached(sent, deferred):
     EMAIL_MAX_DEFERRED = getattr(settings, "MAILER_EMAIL_MAX_DEFERRED", None)
 
     if EMAIL_MAX_DEFERRED is not None and deferred >= EMAIL_MAX_DEFERRED:
-        logging.warning("EMAIL_MAX_DEFERRED (%s) reached, "
+        logger.warning("EMAIL_MAX_DEFERRED (%s) reached, "
                         "stopping for this round", EMAIL_MAX_DEFERRED)
         return True
 
@@ -66,31 +69,31 @@ def _throttle_emails():
     EMAIL_THROTTLE = getattr(settings, "MAILER_EMAIL_THROTTLE", 0)
 
     if EMAIL_THROTTLE:
-        logging.debug("Throttling email delivery. "
+        logger.debug("Throttling email delivery. "
                       "Sleeping %s seconds", EMAIL_THROTTLE)
         time.sleep(EMAIL_THROTTLE)
 
 
 def acquire_lock():
-    logging.debug("acquiring lock...")
-    lock = lockfile.FileLock("send_mail")
+    logger.debug("acquiring lock...")
+    lock = lockfile.FileLock(LOCK_FILE_PATH)
 
     try:
         lock.acquire(LOCK_WAIT_TIMEOUT)
     except lockfile.AlreadyLocked:
-        logging.debug("lock already in place. quitting.")
+        logger.warn("lock already in place. quitting.")
         return False, lock
     except lockfile.LockTimeout:
-        logging.debug("waiting for the lock timed out. quitting.")
+        logger.warn("waiting for the lock timed out. quitting.")
         return False, lock
-    logging.debug("acquired.")
+    logger.debug("acquired.")
     return True, lock
 
 
 def release_lock(lock):
-    logging.debug("releasing lock...")
+    logger.debug("releasing lock...")
     lock.release()
-    logging.debug("released.")
+    logger.debug("released.")
 
 
 def send_all():
@@ -120,7 +123,7 @@ def send_all():
             try:
                 if connection is None:
                     connection = get_connection(backend=EMAIL_BACKEND)
-                logging.info("sending message '{0}' to {1}".format(
+                logger.info("sending message '{0}' to {1}".format(
                     message.subject.encode("utf-8"),
                     u", ".join(message.to_addresses).encode("utf-8"))
                 )
@@ -140,7 +143,7 @@ def send_all():
                     MessageLog.objects.log(message, RESULT_SUCCESS)
                     sent += 1
                 else:
-                    logging.warning("message discarded due to failure in converting from DB. Added on '%s' with priority '%s'" % (message.when_added, message.priority))  # noqa
+                    logger.warning("message discarded due to failure in converting from DB. Added on '%s' with priority '%s'" % (message.when_added, message.priority))  # noqa
                 message.delete()
 
             except (socket_error, smtplib.SMTPSenderRefused,
@@ -148,7 +151,7 @@ def send_all():
                     smtplib.SMTPDataError,
                     smtplib.SMTPAuthenticationError) as err:
                 message.defer()
-                logging.info("message deferred due to failure: %s" % err)
+                logger.warn("message deferred due to failure: %s" % err)
                 MessageLog.objects.log(message, RESULT_FAILURE, log_message=str(err))
                 deferred += 1
                 # Get new connection, it case the connection itself has an error.
@@ -163,9 +166,7 @@ def send_all():
     finally:
         release_lock(lock)
 
-    logging.info("")
-    logging.info("%s sent; %s deferred;" % (sent, deferred))
-    logging.info("done in %.2f seconds" % (time.time() - start_time))
+    logger.info("%s sent; %s deferred; done in %.2f seconds" % (sent, deferred, time.time() - start_time))
 
 
 def send_loop():
@@ -176,6 +177,6 @@ def send_loop():
 
     while True:
         while not Message.objects.all():
-            logging.debug("sleeping for %s seconds before checking queue again" % EMPTY_QUEUE_SLEEP)
+            logger.debug("sleeping for %s seconds before checking queue again" % EMPTY_QUEUE_SLEEP)
             time.sleep(EMPTY_QUEUE_SLEEP)
         send_all()
